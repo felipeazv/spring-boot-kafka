@@ -1,0 +1,73 @@
+package producer;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
+import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.util.concurrent.ListenableFuture;
+import org.springframework.util.concurrent.ListenableFutureCallback;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@Component
+public class Sender {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(Sender.class);
+	private static final String topic = "kafka-test-1";
+	
+	@Autowired
+	private KafkaTemplate<Integer, String> kafkaTemplate;
+	
+	private static int counter = 1;
+	
+	@Scheduled(fixedRate = 1000)
+	public void run() {
+		this.sendMessage(topic, "sending message number -> " + counter++);
+	}
+	
+//	@SendTo(value=topic)
+//	public void message(String message) {
+//		
+//	}
+	
+	public void sendMessage(String topic, String message) {
+		// the KafkaTemplate provides asynchronous send methods returning a
+		// Future
+		ListenableFuture<SendResult<Integer, String>> future = kafkaTemplate.send(topic, message);
+
+		// you can register a callback with the listener to receive the result
+		// of the send asynchronously
+		future.addCallback(new ListenableFutureCallback<SendResult<Integer, String>>() {
+
+			@Override
+			public void onSuccess(SendResult<Integer, String> result) {
+				LOGGER.info("sent message='{}' with offset={}", message, result.getRecordMetadata().offset());
+			}
+
+			@Override
+			public void onFailure(Throwable ex) {
+				LOGGER.error("unable to send message='{}'", message, ex);
+			}
+		});
+
+		// alternatively, to block the sending thread, to await the result,
+		// invoke the future's get() method
+	}
+}
+
+@RestController
+class Controller {
+	private static final String topic = "kafka-test-1";
+	
+	@GetMapping("/send")
+	public @ResponseBody void send(@RequestParam(name="message", required=false, defaultValue = "... test-1") String message) {
+		new Sender().sendMessage(topic, message);
+	}
+	
+}
